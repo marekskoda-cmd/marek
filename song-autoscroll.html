@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-scroll Akordy - BPM Synchronizace</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Calibri', Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            background: rgba(30, 30, 30, 0.95);
+            padding: 15px 20px;
+            border-bottom: 2px solid #444;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .control-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+
+        input[type="number"], select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #555;
+            font-size: 0.95em;
+            width: 80px;
+            background: #2a2a2a;
+            color: #fff;
+        }
+
+        select {
+            width: 120px;
+        }
+
+        #songSelector {
+            width: 250px;
+            max-width: 250px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        button {
+            padding: 10px 24px;
+            font-size: 0.95em;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            color: white;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.2);
+        }
+
+        #playBtn {
+            background: #28a745;
+        }
+
+        #pauseBtn {
+            background: #ffc107;
+        }
+
+        #resetBtn {
+            background: #17a2b8;
+        }
+
+        #uploadBtn {
+            background: #6f42c1;
+            margin-left: auto;
+        }
+
+        .status {
+            padding: 8px 16px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .status.playing {
+            background: rgba(40, 167, 69, 0.3);
+        }
+
+        .status.paused {
+            background: rgba(255, 193, 7, 0.3);
+        }
+
+        .status.loading {
+            background: rgba(111, 66, 193, 0.3);
+        }
+
+        #displayArea {
+            flex: 1;
+            background: #fff;
+            color: #000;
+            padding: 5px 10px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+            column-gap: 15px;
+        }
+
+        /* Zachování přesného formátování z Wordu */
+        #displayArea.loaded p {
+            line-height: 1.08; /* Přesný line-height jako Word (default je cca 1.08 = single spacing) */
+        }
+
+
+        /* Zoom - použití font-size místo transform scale */
+        #displayArea {
+            font-size: 11pt; /* Výchozí velikost písma */
+            transition: font-size 0.2s ease;
+        }
+
+        /* Scrollbar */
+        #displayArea::-webkit-scrollbar {
+            width: 14px;
+        }
+
+        #displayArea::-webkit-scrollbar-track {
+            background: #e0e0e0;
+        }
+
+        #displayArea::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 7px;
+        }
+
+        #displayArea::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 100px 20px;
+            color: #999;
+            font-family: 'Calibri', Arial, sans-serif;
+        }
+
+        .welcome-message h2 {
+            margin-bottom: 20px;
+        }
+
+        .file-info {
+            background: rgba(111, 66, 193, 0.2);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85em;
+        }
+
+        .song-separator {
+            display: none; /* Skryjeme oddělovače, zobrazíme jen vybranou skladbu */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <div class="control-item">
+                <label for="songSelector">Skladba:</label>
+                <select id="songSelector" style="display: none;">
+                    <option value="">-- Vyberte skladbu --</option>
+                </select>
+            </div>
+
+            <div class="control-item">
+                <label for="bpmInput">BPM:</label>
+                <input type="number" id="bpmInput" value="120" min="40" max="240">
+            </div>
+
+            <div class="control-item">
+                <label for="speedMultiplier">Rychlost:</label>
+                <select id="speedMultiplier">
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                </select>
+            </div>
+
+            <div class="control-item">
+                <label for="scrollAmount">Px/beat:</label>
+                <input type="number" id="scrollAmount" value="1" min="1" max="10" step="0.5">
+            </div>
+
+            <button id="playBtn">▶ PLAY</button>
+            <button id="pauseBtn">⏸ PAUSE</button>
+            <button id="resetBtn">⏮ RESET</button>
+
+            <div class="control-item">
+                <label>Transpozice:</label>
+                <button id="transposeDownBtn" style="background: #6c757d; padding: 8px 16px;">♭ -1</button>
+                <span id="transposeLevel" style="min-width: 50px; text-align: center;">0</span>
+                <button id="transposeUpBtn" style="background: #6c757d; padding: 8px 16px;">♯ +1</button>
+                <button id="transposeResetBtn" style="background: #6c757d; padding: 8px 12px;">⟲</button>
+            </div>
+
+            <div class="control-item">
+                <label for="columnCount">Sloupce:</label>
+                <select id="columnCount">
+                    <option value="1" selected>1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </div>
+
+            <div class="control-item">
+                <label>Velikost:</label>
+                <button id="zoomOutBtn" style="background: #6c757d; padding: 8px 16px;">➖</button>
+                <span id="zoomLevel" style="min-width: 50px; text-align: center;">100%</span>
+                <button id="zoomInBtn" style="background: #6c757d; padding: 8px 16px;">➕</button>
+            </div>
+
+            <div class="control-item">
+                <label>Lupa:</label>
+                <button id="scaleOutBtn" style="background: #6c757d; padding: 8px 16px;">➖</button>
+                <span id="scaleLevel" style="min-width: 50px; text-align: center;">100%</span>
+                <button id="scaleInBtn" style="background: #6c757d; padding: 8px 16px;">➕</button>
+            </div>
+
+            <button id="fullscreenBtn" style="background: #fd7e14;">⛶ Fullscreen</button>
+
+            <div class="control-item">
+                <label for="rotateSelect">Otočení:</label>
+                <select id="rotateSelect">
+                    <option value="0" selected>Ne</option>
+                    <option value="90">90°</option>
+                </select>
+            </div>
+
+            <div class="control-item">
+                <label for="fileSelector">Soubor:</label>
+                <select id="fileSelector" style="display: none; width: 200px;">
+                    <option value="">-- Vyberte soubor --</option>
+                </select>
+                <button id="deleteFileBtn" style="background: #dc3545; padding: 8px 16px; display: none;">🗑 Smazat</button>
+            </div>
+
+            <div class="status" id="status">Připraveno</div>
+            <div class="file-info" id="fileInfo" style="display: none;"></div>
+
+            <input type="file" id="fileInput" accept=".docx,.doc">
+            <button id="uploadBtn">📁 Nahrát DOCX soubor</button>
+        </div>
+
+        <div id="displayArea">
+            <div class="welcome-message">
+                <h2>🎸 Nahrání Word dokumentu s akordy</h2>
+                <p style="margin-top: 20px;">Klikněte na "📁 Nahrát DOCX soubor" a vyberte váš dokument</p>
+                <p style="margin-top: 10px;">Všechny skladby budou automaticky rozděleny a lze mezi nimi přepínat!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Potřebné knihovny -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <script>
+        let scrollInterval = null;
+        let isPlaying = false;
+        let allSongs = [];
+        let currentSongIndex = 0;
+        let zoomLevel = 100;
+        let scaleLevel = 100; // Klasický zoom (transform scale)
+        let transposeLevel = 0; // Aktuální transpozice v půltonech
+        let columnCount = 1; // Počet sloupců
+        let rotateAngle = 0; // Úhel otočení
+        let savedFiles = {}; // Uložené soubory
+        let currentFileId = null; // ID aktuálně zobrazeného souboru
+
+        const displayArea = document.getElementById('displayArea');
+        const bpmInput = document.getElementById('bpmInput');
+        const speedMultiplier = document.getElementById('speedMultiplier');
+        const scrollAmount = document.getElementById('scrollAmount');
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+        const fileInfo = document.getElementById('fileInfo');
+        const songSelector = document.getElementById('songSelector');
+        const fileSelector = document.getElementById('fileSelector');
+        const deleteFileBtn = document.getElementById('deleteFileBtn');
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const zoomLevelSpan = document.getElementById('zoomLevel');
+        const scaleInBtn = document.getElementById('scaleInBtn');
+        const scaleOutBtn = document.getElementById('scaleOutBtn');
+        const scaleLevelSpan = document.getElementById('scaleLevel');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const transposeUpBtn = document.getElementById('transposeUpBtn');
+        const transposeDownBtn = document.getElementById('transposeDownBtn');
+        const transposeResetBtn = document.getElementById('transposeResetBtn');
+        const transposeLevelSpan = document.getElementById('transposeLevel');
+        const columnCountSelect = document.getElementById('columnCount');
+        const rotateSelect = document.getElementById('rotateSelect');
+
+        // Načíst uložené soubory z localStorage při startu
+        function loadSavedFiles() {
+            const saved = localStorage.getItem('savedDocxFiles');
+            if (saved) {
+                try {
+                    savedFiles = JSON.parse(saved);
+                    updateFileSelector();
+
+                    // Načíst poslední použitý soubor
+                    const lastFileId = localStorage.getItem('lastFileId');
+                    if (lastFileId && savedFiles[lastFileId]) {
+                        fileSelector.value = lastFileId;
+                        loadFileFromStorage(lastFileId);
+                    }
+                } catch (e) {
+                    console.error('Chyba při načítání uložených souborů:', e);
+                }
+            }
+        }
+
+        // Aktualizovat file selector
+        function updateFileSelector() {
+            fileSelector.innerHTML = '<option value="">-- Vyberte soubor --</option>';
+
+            for (const [id, fileData] of Object.entries(savedFiles)) {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = fileData.name;
+                fileSelector.appendChild(option);
+            }
+
+            if (Object.keys(savedFiles).length > 0) {
+                fileSelector.style.display = 'inline-block';
+                deleteFileBtn.style.display = 'inline-block';
+            } else {
+                fileSelector.style.display = 'none';
+                deleteFileBtn.style.display = 'none';
+            }
+        }
+
+        // Načíst soubor z localStorage
+        function loadFileFromStorage(fileId) {
+            const fileData = savedFiles[fileId];
+            if (!fileData) return;
+
+            currentFileId = fileId;
+            localStorage.setItem('lastFileId', fileId);
+
+            // Načíst skladby
+            allSongs = fileData.songs;
+            currentSongIndex = 0;
+
+            // Naplnit song selector
+            songSelector.innerHTML = '<option value="">-- Vyberte skladbu --</option>';
+            allSongs.forEach((song, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${index + 1}. ${song.title}`;
+                songSelector.appendChild(option);
+            });
+
+            songSelector.style.display = 'block';
+
+            // Zobrazit první skladbu
+            if (allSongs.length > 0) {
+                songSelector.value = '0';
+                displaySong(0);
+            }
+
+            status.textContent = `✓ Načteno ${allSongs.length} skladeb`;
+            fileInfo.style.display = 'block';
+            fileInfo.textContent = `📄 ${fileData.name}`;
+        }
+
+        // Upload tlačítko otevře file dialog
+        uploadBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Změna vybraného souboru
+        fileSelector.addEventListener('change', (e) => {
+            const fileId = e.target.value;
+            if (fileId) {
+                loadFileFromStorage(fileId);
+            }
+        });
+
+        // Smazat aktuální soubor
+        deleteFileBtn.addEventListener('click', () => {
+            if (!currentFileId) {
+                alert('Nejprve vyberte soubor ke smazání');
+                return;
+            }
+
+            const fileName = savedFiles[currentFileId].name;
+            if (confirm(`Opravdu chcete smazat soubor "${fileName}"?`)) {
+                delete savedFiles[currentFileId];
+                localStorage.setItem('savedDocxFiles', JSON.stringify(savedFiles));
+
+                if (currentFileId === localStorage.getItem('lastFileId')) {
+                    localStorage.removeItem('lastFileId');
+                }
+
+                currentFileId = null;
+                allSongs = [];
+                displayArea.innerHTML = '<div class="welcome-message"><h2>🎸 Nahrání Word dokumentu s akordy</h2><p style="margin-top: 20px;">Klikněte na "📁 Nahrát DOCX soubor" a vyberte váš dokument</p><p style="margin-top: 10px;">Všechny skladby budou automaticky rozděleny a lze mezi nimi přepínat!</p></div>';
+                songSelector.style.display = 'none';
+
+                updateFileSelector();
+                status.textContent = 'Soubor smazán';
+            }
+        });
+
+        // Zoom In
+        zoomInBtn.addEventListener('click', () => {
+            zoomLevel = Math.min(zoomLevel + 10, 200);
+            applyZoom();
+        });
+
+        // Zoom Out
+        zoomOutBtn.addEventListener('click', () => {
+            zoomLevel = Math.max(zoomLevel - 10, 50);
+            applyZoom();
+        });
+
+        // Aplikovat zoom pomocí font-size
+        function applyZoom() {
+            // Výchozí velikost je 11pt, škálujeme podle zoom level
+            const baseFontSize = 11; // pt
+            const fontSize = (baseFontSize * zoomLevel) / 100;
+            displayArea.style.fontSize = `${fontSize}pt`;
+            zoomLevelSpan.textContent = `${zoomLevel}%`;
+        }
+
+        // Scale In (klasický zoom)
+        scaleInBtn.addEventListener('click', () => {
+            scaleLevel = Math.min(scaleLevel + 10, 200);
+            applyScale();
+        });
+
+        // Scale Out (klasický zoom)
+        scaleOutBtn.addEventListener('click', () => {
+            scaleLevel = Math.max(scaleLevel - 10, 50);
+            applyScale();
+        });
+
+        // Aplikovat klasický zoom pomocí transform scale
+        function applyScale() {
+            const scale = scaleLevel / 100;
+            displayArea.style.transform = `scale(${scale})`;
+            displayArea.style.transformOrigin = 'top left';
+            displayArea.style.width = `${100 / scale}%`;
+            displayArea.style.height = `${100 / scale}%`;
+            scaleLevelSpan.textContent = `${scaleLevel}%`;
+        }
+
+        // Fullscreen
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                fullscreenBtn.textContent = '✕ Exit Fullscreen';
+            } else {
+                document.exitFullscreen();
+                fullscreenBtn.textContent = '⛶ Fullscreen';
+            }
+        });
+
+        // Listener pro fullscreen změny
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                fullscreenBtn.textContent = '⛶ Fullscreen';
+            }
+        });
+
+        // Změna skladby
+        songSelector.addEventListener('change', (e) => {
+            const songIndex = parseInt(e.target.value);
+            if (!isNaN(songIndex)) {
+                currentSongIndex = songIndex;
+                displaySong(songIndex);
+            }
+        });
+
+        // Transpozice akordů
+        transposeUpBtn.addEventListener('click', () => {
+            transposeLevel++;
+            applyTranspose();
+        });
+
+        transposeDownBtn.addEventListener('click', () => {
+            transposeLevel--;
+            applyTranspose();
+        });
+
+        transposeResetBtn.addEventListener('click', () => {
+            transposeLevel = 0;
+            applyTranspose();
+        });
+
+        // Změna počtu sloupců
+        columnCountSelect.addEventListener('change', (e) => {
+            columnCount = parseInt(e.target.value);
+            applyColumns();
+        });
+
+        // Aplikovat sloupcové zobrazení
+        function applyColumns() {
+            if (columnCount > 1) {
+                displayArea.style.columnCount = columnCount;
+                displayArea.style.columnFill = 'auto';
+            } else {
+                displayArea.style.columnCount = '1';
+                displayArea.style.columnFill = 'balance';
+            }
+        }
+
+        // Otočení obrazovky
+        rotateSelect.addEventListener('change', (e) => {
+            rotateAngle = parseInt(e.target.value);
+            applyRotation();
+        });
+
+        // Aplikovat otočení
+        function applyRotation() {
+            const container = document.querySelector('.container');
+
+            if (rotateAngle === 0) {
+                container.style.transform = 'none';
+                container.style.transformOrigin = 'center';
+                container.style.width = '100%';
+                container.style.height = '100vh';
+                container.style.position = 'relative';
+                container.style.top = 'auto';
+                container.style.left = 'auto';
+                container.style.marginLeft = '0';
+                container.style.marginTop = '0';
+            } else if (rotateAngle === 90) {
+                container.style.transform = 'rotate(90deg)';
+                container.style.transformOrigin = 'center center';
+                container.style.width = '100vh';
+                container.style.height = '100vw';
+                container.style.position = 'absolute';
+                container.style.top = '50%';
+                container.style.left = '50%';
+                container.style.marginLeft = '-50vh';
+                container.style.marginTop = '-50vw';
+            }
+        }
+
+        // Když uživatel vybere soubor
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            status.textContent = '⏳ Načítám soubor...';
+            status.className = 'status loading';
+            fileInfo.style.display = 'block';
+            fileInfo.textContent = `📄 ${file.name}`;
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                await parseDocxToHtml(arrayBuffer);
+
+                // Uložit soubor do localStorage
+                const fileId = Date.now().toString();
+                currentFileId = fileId;
+
+                savedFiles[fileId] = {
+                    name: file.name,
+                    songs: allSongs,
+                    uploadedAt: new Date().toISOString()
+                };
+
+                localStorage.setItem('savedDocxFiles', JSON.stringify(savedFiles));
+                localStorage.setItem('lastFileId', fileId);
+
+                updateFileSelector();
+                fileSelector.value = fileId;
+
+                status.textContent = `✓ Načteno ${allSongs.length} skladeb - soubor uložen`;
+                status.className = 'status';
+
+            } catch (error) {
+                console.error('Chyba při načítání souboru:', error);
+                status.textContent = '❌ Chyba při načítání souboru';
+                status.className = 'status';
+                alert('Nepodařilo se načíst soubor. Ujistěte se, že je to platný DOCX soubor.');
+            }
+        });
+
+        // Zobrazení konkrétní skladby
+        function displaySong(index) {
+            if (index < 0 || index >= allSongs.length) return;
+
+            const song = allSongs[index];
+            displayArea.innerHTML = song.html;
+            displayArea.classList.add('loaded');
+
+            // Nastavit BPM pokud je v textu skladby
+            const bpmMatch = song.text.match(/BPM[:\s]*(\d+)/i);
+            if (bpmMatch) {
+                bpmInput.value = bpmMatch[1];
+            }
+
+            resetBtn.click();
+            status.textContent = `📝 ${song.title}`;
+        }
+
+        // Vlastní parser DOCX - přímo čte XML a převádí na HTML se zachováním VŠECH stylů
+        async function parseDocxToHtml(arrayBuffer) {
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            const documentXml = await zip.file('word/document.xml').async('string');
+
+            // Parse XML
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(documentXml, 'text/xml');
+
+            // Zpracovat všechny paragrafy
+            const paragraphs = xmlDoc.querySelectorAll('w\\:p, p');
+
+            let currentSongHtml = '';
+            let currentSongText = '';
+            let currentSongTitle = '';
+            let emptyLineCount = 0;
+            let hasContent = false;
+
+            paragraphs.forEach((paragraph, index) => {
+                const paragraphResult = parseParagraph(paragraph);
+                const isEmpty = !paragraphResult.text.trim();
+                const text = paragraphResult.text.trim();
+
+                // Detekce názvu písničky ve formátu "KAPELA - PÍSEŇ"
+                // Musí být VELKÝMI PÍSMENY, obsahovat pomlčku, nesmí obsahovat vykřičníky
+                // Podporuje různé typy pomlček: - (hyphen), – (en-dash), — (em-dash)
+                const hasUppercase = text === text.toUpperCase() && /[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/.test(text);
+                const hasDash = /[-–—]/.test(text);
+                const hasExclamation = /!/.test(text);
+                const hasProperFormat = /^[^-–—!]+[\s]*[-–—][\s]*[^-–—!]+$/.test(text); // Slovo - Slovo (bez vykřičníků)
+                const isSongTitle = hasUppercase && hasDash && !hasExclamation && hasProperFormat && text.length > 5;
+
+                if (!isEmpty && isSongTitle) {
+                    // Našli jsme nový název skladby - uložit předchozí skladbu
+                    if (hasContent && currentSongHtml.trim()) {
+                        allSongs.push({
+                            title: currentSongTitle || `Skladba ${allSongs.length + 1}`,
+                            html: currentSongHtml,
+                            text: currentSongText
+                        });
+                    }
+
+                    // Reset pro novou skladbu
+                    currentSongHtml = paragraphResult.html;
+                    currentSongText = paragraphResult.text + '\n';
+                    currentSongTitle = text;
+                    hasContent = true;
+                    emptyLineCount = 0;
+                } else {
+                    // Není to název - přidat k aktuální skladbě
+                    if (isEmpty) {
+                        emptyLineCount++;
+                    } else {
+                        emptyLineCount = 0;
+                        hasContent = true;
+                    }
+
+                    currentSongHtml += paragraphResult.html;
+                    currentSongText += paragraphResult.text + '\n';
+                }
+            });
+
+            // Uložit poslední skladbu
+            if (currentSongHtml.trim()) {
+                allSongs.push({
+                    title: currentSongTitle || `Skladba ${allSongs.length + 1}`,
+                    html: currentSongHtml,
+                    text: currentSongText
+                });
+            }
+
+            // Naplnit selector
+            songSelector.innerHTML = '<option value="">-- Vyberte skladbu --</option>';
+            allSongs.forEach((song, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${index + 1}. ${song.title}`;
+                songSelector.appendChild(option);
+            });
+
+            songSelector.style.display = 'block';
+
+            // Zobrazit první skladbu
+            if (allSongs.length > 0) {
+                currentSongIndex = 0;
+                songSelector.value = '0';
+                displaySong(0);
+            }
+        }
+
+        // Parsování jednotlivého paragrafu
+        function parseParagraph(paragraph) {
+            let paragraphText = '';
+
+            // Zpracovat spacing (mezery před/po odstavci) z Word XML
+            const pPr = paragraph.querySelector('w\\:pPr, pPr');
+            let spacingBefore = 0;
+            let spacingAfter = 0;
+            let lineSpacing = null;
+
+            if (pPr) {
+                const spacing = pPr.querySelector('w\\:spacing, spacing');
+                if (spacing) {
+                    // Before spacing (mezera před odstavcem)
+                    const before = spacing.getAttribute('w:before') || spacing.getAttribute('before');
+                    if (before) spacingBefore = parseInt(before) / 20; // Převod z TWIPs na body
+
+                    // After spacing (mezera za odstavcem)
+                    const after = spacing.getAttribute('w:after') || spacing.getAttribute('after');
+                    if (after) spacingAfter = parseInt(after) / 20;
+
+                    // Line spacing (řádkování)
+                    const line = spacing.getAttribute('w:line') || spacing.getAttribute('line');
+                    const lineRule = spacing.getAttribute('w:lineRule') || spacing.getAttribute('lineRule');
+                    if (line) {
+                        if (lineRule === 'auto') {
+                            // Automatické řádkování (např. 1.0, 1.5, 2.0)
+                            lineSpacing = parseInt(line) / 240; // 240 = single spacing
+                        } else {
+                            // Přesné řádkování v TWIPs
+                            lineSpacing = `${parseInt(line) / 20}pt`;
+                        }
+                    }
+                }
+            }
+
+            // Vytvořit inline styly pro paragraf
+            let pStyle = 'margin: 0; padding: 0;';
+
+            // Pokud není spacing definován, použij Word default (200 TWIPs = 10pt)
+            let finalSpacingAfter = 10; // default
+            if (spacingAfter > 0) {
+                finalSpacingAfter = spacingAfter;
+            }
+
+            if (spacingBefore > 0) pStyle += ` margin-top: ${spacingBefore}pt;`;
+            pStyle += ` margin-bottom: ${finalSpacingAfter}pt;`;
+
+            if (lineSpacing !== null) {
+                if (typeof lineSpacing === 'number') {
+                    pStyle += ` line-height: ${lineSpacing};`;
+                } else {
+                    pStyle += ` line-height: ${lineSpacing};`;
+                }
+            } else {
+                // Word default line spacing = 1.15
+                pStyle += ` line-height: 1.15;`;
+            }
+
+            let paragraphHtml = `<p style="${pStyle}">`;
+
+            // Zpracovat všechny text runs v paragrafu
+            const runs = paragraph.querySelectorAll('w\\:r, r');
+
+            runs.forEach(run => {
+                const rPr = run.querySelector('w\\:rPr, rPr');
+                const textNode = run.querySelector('w\\:t, t');
+
+                if (textNode) {
+                    let text = textNode.textContent;
+                    paragraphText += text;
+                    let styles = '';
+
+                    if (rPr) {
+                        // Barva
+                        const color = rPr.querySelector('w\\:color, color');
+                        if (color) {
+                            const colorVal = color.getAttribute('w:val') || color.getAttribute('val');
+                            if (colorVal && colorVal !== 'auto') {
+                                styles += `color: #${colorVal}; `;
+                            }
+                        }
+
+                        // Velikost písma - použít em pro škálovatelnost
+                        const sz = rPr.querySelector('w\\:sz, sz');
+                        if (sz) {
+                            const sizeVal = sz.getAttribute('w:val') || sz.getAttribute('val');
+                            if (sizeVal) {
+                                const fontSizePt = parseInt(sizeVal) / 2;
+                                // Převést na em relativně k base size 11pt
+                                const fontSizeEm = fontSizePt / 11;
+                                styles += `font-size: ${fontSizeEm}em; `;
+                            }
+                        }
+
+                        // Tučné
+                        const b = rPr.querySelector('w\\:b, b');
+                        if (b) {
+                            styles += 'font-weight: bold; ';
+                        }
+
+                        // Kurzíva
+                        const i = rPr.querySelector('w\\:i, i');
+                        if (i) {
+                            styles += 'font-style: italic; ';
+                        }
+
+                        // Podtržení
+                        const u = rPr.querySelector('w\\:u, u');
+                        if (u) {
+                            styles += 'text-decoration: underline; ';
+                        }
+
+                        // Font
+                        const rFonts = rPr.querySelector('w\\:rFonts, rFonts');
+                        if (rFonts) {
+                            const fontName = rFonts.getAttribute('w:ascii') || rFonts.getAttribute('ascii');
+                            if (fontName) {
+                                styles += `font-family: '${fontName}', Arial, sans-serif; `;
+                            }
+                        }
+                    }
+
+                    if (styles) {
+                        paragraphHtml += `<span style="${styles}">${escapeHtml(text)}</span>`;
+                    } else {
+                        paragraphHtml += escapeHtml(text);
+                    }
+                }
+
+                // Tabulátory
+                const tab = run.querySelector('w\\:tab, tab');
+                if (tab) {
+                    paragraphHtml += '&nbsp;&nbsp;&nbsp;&nbsp;';
+                    paragraphText += '    ';
+                }
+            });
+
+            // Pokud je paragraf prázdný, přidej nbsp aby měl výšku (jako ve Wordu)
+            if (paragraphText.trim() === '') {
+                paragraphHtml += '&nbsp;';
+            }
+
+            paragraphHtml += '</p>';
+
+            return {
+                html: paragraphHtml,
+                text: paragraphText
+            };
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Výpočet rychlosti scrollování
+        function calculateScrollSpeed() {
+            const bpm = parseInt(bpmInput.value) || 120;
+            const multiplier = parseFloat(speedMultiplier.value) || 1;
+            const pixels = parseFloat(scrollAmount.value) || 1;
+
+            const intervalMs = 50;
+            const beatsPerSecond = bpm / 60;
+            const pixelsPerSecond = beatsPerSecond * pixels * 60 * multiplier;
+            const scrollPixels = (pixelsPerSecond * intervalMs) / 1000;
+
+            return { intervalMs, scrollPixels };
+        }
+
+        // Play
+        playBtn.addEventListener('click', () => {
+            if (isPlaying) return;
+
+            if (displayArea.querySelector('.welcome-message')) {
+                alert('Nejdřív nahrajte DOCX soubor!');
+                return;
+            }
+
+            isPlaying = true;
+            status.textContent = '▶ Přehrává se...';
+            status.className = 'status playing';
+
+            const { intervalMs, scrollPixels } = calculateScrollSpeed();
+
+            scrollInterval = setInterval(() => {
+                displayArea.scrollTop += scrollPixels;
+
+                if (displayArea.scrollTop >= displayArea.scrollHeight - displayArea.clientHeight - 10) {
+                    pause();
+                    status.textContent = '✓ Konec';
+                }
+            }, intervalMs);
+        });
+
+        // Pause
+        function pause() {
+            if (scrollInterval) {
+                clearInterval(scrollInterval);
+                scrollInterval = null;
+            }
+            isPlaying = false;
+            status.textContent = '⏸ Pozastaveno';
+            status.className = 'status paused';
+        }
+
+        pauseBtn.addEventListener('click', pause);
+
+        // Reset
+        resetBtn.addEventListener('click', () => {
+            pause();
+            displayArea.scrollTop = 0;
+            status.textContent = 'Připraveno';
+            status.className = 'status';
+        });
+
+        // Dynamická změna rychlosti
+        [bpmInput, speedMultiplier, scrollAmount].forEach(element => {
+            element.addEventListener('change', () => {
+                if (isPlaying) {
+                    pause();
+                    setTimeout(() => playBtn.click(), 100);
+                }
+            });
+        });
+
+        // Transpozice akordů
+        const chordMap = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'H'];
+        const chordAliases = {
+            'B': 'A#',  // Někdy se používá B místo A#
+            'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#', 'Hb': 'A#'
+        };
+
+        function isValidChord(text) {
+            // Kontrola, zda je to platný akord (začíná A-H, může mít #/b a pak modifikátory)
+            // Platné příklady: C, C#, Cm, Cmi, C7, Cmaj7, Dsus4, G#m7, Ami, atd.
+            const chordPattern = /^[A-H][b#]?(mi|maj|min|sus|dim|aug|add|m)?\d*$/;
+            return chordPattern.test(text);
+        }
+
+        function transposeChord(chord, semitones) {
+            if (!chord || chord.trim() === '') return chord;
+
+            // Pokud to není platný akord, vrátit původní text
+            if (!isValidChord(chord)) return chord;
+
+            // Najít akord v textu - může být C, C#, Cm, C7, Cmaj7, atd.
+            const chordRegex = /^([A-H][b#]?)(.*)$/;
+            const match = chord.match(chordRegex);
+
+            if (!match) return chord;
+
+            let root = match[1];  // C, C#, D, atd.
+            const suffix = match[2]; // m, 7, maj7, atd.
+
+            // Převést aliasy (např. Db -> C#)
+            if (chordAliases[root]) {
+                root = chordAliases[root];
+            }
+
+            // Najít pozici v mapě
+            let index = chordMap.indexOf(root);
+            if (index === -1) return chord;
+
+            // Aplikovat transpozici
+            index = (index + semitones) % 12;
+            if (index < 0) index += 12;
+
+            return chordMap[index] + suffix;
+        }
+
+        function applyTranspose() {
+            if (!allSongs[currentSongIndex]) return;
+
+            // Aktualizovat zobrazení úrovně transpozice
+            transposeLevelSpan.textContent = transposeLevel > 0 ? `+${transposeLevel}` : transposeLevel;
+
+            // Znovu zobrazit skladbu s novou transpozicí
+            const song = allSongs[currentSongIndex];
+            displayArea.innerHTML = song.html;
+            displayArea.classList.add('loaded');
+
+            // Najít všechny akordy a transponovat je
+            if (transposeLevel !== 0) {
+                // Najít všechny span elementy s modrou barvou (akordy z Wordu)
+                const allSpans = displayArea.querySelectorAll('span[style*="color"]');
+
+                allSpans.forEach(span => {
+                    const style = span.getAttribute('style');
+                    // Zkontrolovat jestli je to modrá barva (akordy)
+                    if (style && (style.includes('color: #0070c0') || style.includes('color: #0000ff') || style.includes('color: #'))) {
+                        // Transponovat každý akord uvnitř spanu samostatně, zachovat mezery a čárky
+                        const originalText = span.textContent;
+
+                        // Rozdělit text na tokeny (akordy, mezery, čárky, atd.)
+                        const tokens = originalText.split(/(\s+|,)/);
+
+                        const transposedTokens = tokens.map(token => {
+                            // Pokud je to mezera nebo čárka, zachovat
+                            if (/^\s+$/.test(token) || token === ',') {
+                                return token;
+                            }
+                            // Jinak to může být akord - zkusit transponovat
+                            const trimmed = token.trim();
+                            if (trimmed.length > 0) {
+                                return transposeChord(trimmed, transposeLevel);
+                            }
+                            return token;
+                        });
+
+                        span.textContent = transposedTokens.join('');
+                    }
+                });
+            }
+
+            resetBtn.click();
+        }
+
+        // Klávesové zkratky
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (isPlaying) {
+                    pause();
+                } else {
+                    playBtn.click();
+                }
+            } else if (e.code === 'Escape') {
+                e.preventDefault();
+                resetBtn.click();
+            } else if (e.code === 'KeyO' && e.ctrlKey) {
+                e.preventDefault();
+                uploadBtn.click();
+            } else if (e.code === 'ArrowRight') {
+                // Další skladba
+                e.preventDefault();
+                if (currentSongIndex < allSongs.length - 1) {
+                    songSelector.value = currentSongIndex + 1;
+                    songSelector.dispatchEvent(new Event('change'));
+                }
+            } else if (e.code === 'ArrowLeft') {
+                // Předchozí skladba
+                e.preventDefault();
+                if (currentSongIndex > 0) {
+                    songSelector.value = currentSongIndex - 1;
+                    songSelector.dispatchEvent(new Event('change'));
+                }
+            } else if (e.code === 'Equal' && e.ctrlKey) {
+                // Ctrl + = pro zoom in
+                e.preventDefault();
+                zoomInBtn.click();
+            } else if (e.code === 'Minus' && e.ctrlKey) {
+                // Ctrl + - pro zoom out
+                e.preventDefault();
+                zoomOutBtn.click();
+            } else if (e.code === 'Digit0' && e.ctrlKey) {
+                // Ctrl + 0 pro reset zoom
+                e.preventDefault();
+                zoomLevel = 100;
+                applyZoom();
+            } else if (e.code === 'KeyF' && e.ctrlKey) {
+                // Ctrl + F pro fullscreen
+                e.preventDefault();
+                fullscreenBtn.click();
+            }
+        });
+
+        // Drag & Drop
+        displayArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            displayArea.style.background = '#f0f0f0';
+        });
+
+        displayArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            displayArea.style.background = '#fff';
+        });
+
+        displayArea.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            displayArea.style.background = '#fff';
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    fileInput.files = dataTransfer.files;
+                    fileInput.dispatchEvent(new Event('change'));
+                } else {
+                    alert('Prosím nahrajte DOCX nebo DOC soubor!');
+                }
+            }
+        });
+
+        // Načíst uložené soubory při startu
+        loadSavedFiles();
+    </script>
+</body>
+</html>
