@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auto-scroll Akordy - BPM Synchronizace</title>
@@ -127,6 +126,36 @@
             background: rgba(111, 66, 193, 0.3);
         }
 
+        /* Skrytí ovládacích prvků */
+        .controls-hidden .control-item:not(.always-visible),
+        .controls-hidden #fullscreenBtn,
+        .controls-hidden #uploadBtn,
+        .controls-hidden .status,
+        .controls-hidden .file-info {
+            display: none !important;
+        }
+
+        /* Menší lišta když jsou ovládací prvky skryté */
+        .controls-hidden {
+            padding: 5px 10px !important;
+            gap: 5px !important;
+        }
+
+        /* Tlačítko pro zobrazení ovládání - vždy viditelné */
+        #showControlsBtn {
+            display: none;
+            background: #28a745;
+            padding: 8px 16px;
+        }
+
+        .controls-hidden #showControlsBtn {
+            display: inline-block !important;
+        }
+
+        .controls-hidden #hideControlsBtn {
+            display: none !important;
+        }
+
         #displayArea {
             flex: 1;
             background: #fff;
@@ -202,29 +231,34 @@
 
             <div class="control-item">
                 <label for="bpmInput">BPM:</label>
-                <input type="number" id="bpmInput" value="120" min="40" max="240">
+                <input type="number" id="bpmInput" value="120" min="10" max="240" step="1">
             </div>
 
             <div class="control-item">
                 <label for="speedMultiplier">Rychlost:</label>
                 <select id="speedMultiplier">
+                    <option value="0.1">0.1x (velmi pomalé)</option>
+                    <option value="0.2">0.2x</option>
+                    <option value="0.3">0.3x</option>
                     <option value="0.5">0.5x</option>
                     <option value="0.75">0.75x</option>
-                    <option value="1" selected>1x</option>
+                    <option value="1" selected>1x (normální)</option>
                     <option value="1.25">1.25x</option>
                     <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
+                    <option value="2">2x (rychlé)</option>
                 </select>
             </div>
 
             <div class="control-item">
                 <label for="scrollAmount">Px/beat:</label>
-                <input type="number" id="scrollAmount" value="1" min="1" max="10" step="0.5">
+                <input type="number" id="scrollAmount" value="1" min="0.1" max="10" step="0.1">
             </div>
 
-            <button id="playBtn">▶ PLAY</button>
-            <button id="pauseBtn">⏸ PAUSE</button>
-            <button id="resetBtn">⏮ RESET</button>
+            <div class="control-item always-visible" style="display: flex; gap: 10px;">
+                <button id="playBtn">▶ PLAY</button>
+                <button id="pauseBtn">⏸ PAUSE</button>
+                <button id="resetBtn">⏮ RESET</button>
+            </div>
 
             <div class="control-item">
                 <label>Transpozice:</label>
@@ -259,6 +293,8 @@
             </div>
 
             <button id="fullscreenBtn" style="background: #fd7e14;">⛶ Fullscreen</button>
+            <button id="hideControlsBtn" style="background: #6c757d;">👁 Skrýt ovládání</button>
+            <button id="showControlsBtn">👁 Zobrazit ovládání</button>
 
             <div class="control-item">
                 <label for="rotateSelect">Otočení:</label>
@@ -307,6 +343,8 @@
         let rotateAngle = 0; // Úhel otočení
         let savedFiles = {}; // Uložené soubory
         let currentFileId = null; // ID aktuálně zobrazeného souboru
+        let scrollAccumulator = 0; // Akumulátor pro drobné scrolly
+        let controlsHidden = false; // Stav skrytí ovládání
 
         const displayArea = document.getElementById('displayArea');
         const bpmInput = document.getElementById('bpmInput');
@@ -335,6 +373,34 @@
         const transposeLevelSpan = document.getElementById('transposeLevel');
         const columnCountSelect = document.getElementById('columnCount');
         const rotateSelect = document.getElementById('rotateSelect');
+        const hideControlsBtn = document.getElementById('hideControlsBtn');
+        const showControlsBtn = document.getElementById('showControlsBtn');
+
+        // Skrýt ovládání
+        hideControlsBtn.addEventListener('click', () => {
+            const controls = document.querySelector('.controls');
+            controlsHidden = true;
+            controls.classList.add('controls-hidden');
+        });
+
+        // Zobrazit ovládání
+        showControlsBtn.addEventListener('click', () => {
+            const controls = document.querySelector('.controls');
+            controlsHidden = false;
+            controls.classList.remove('controls-hidden');
+        });
+
+        // Klávesová zkratka H pro skrytí/zobrazení ovládání
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyH' && !['INPUT', 'SELECT'].includes(e.target.tagName)) {
+                e.preventDefault();
+                if (controlsHidden) {
+                    showControlsBtn.click();
+                } else {
+                    hideControlsBtn.click();
+                }
+            }
+        });
 
         // Načíst uložené soubory z localStorage při startu
         function loadSavedFiles() {
@@ -898,9 +964,14 @@
             const multiplier = parseFloat(speedMultiplier.value) || 1;
             const pixels = parseFloat(scrollAmount.value) || 1;
 
+            // Výpočet scrollování:
+            // BPM = kolik beatů za minutu
+            // "pixels" parametr = kolik pixelů posunout za beat
+            // Přidáme konstantu 10x pro praktické použití
             const intervalMs = 50;
+            const pixelsPerBeat = pixels * 10; // Zvětšeno 10x
             const beatsPerSecond = bpm / 60;
-            const pixelsPerSecond = beatsPerSecond * pixels * 60 * multiplier;
+            const pixelsPerSecond = beatsPerSecond * pixelsPerBeat * multiplier;
             const scrollPixels = (pixelsPerSecond * intervalMs) / 1000;
 
             return { intervalMs, scrollPixels };
@@ -918,11 +989,19 @@
             isPlaying = true;
             status.textContent = '▶ Přehrává se...';
             status.className = 'status playing';
+            scrollAccumulator = 0; // Reset akumulátoru
 
             const { intervalMs, scrollPixels } = calculateScrollSpeed();
 
             scrollInterval = setInterval(() => {
-                displayArea.scrollTop += scrollPixels;
+                // Akumulujeme drobné scrolly a scrollujeme až když máme alespoň 1 pixel
+                scrollAccumulator += scrollPixels;
+
+                if (scrollAccumulator >= 1) {
+                    const pixelsToScroll = Math.floor(scrollAccumulator);
+                    displayArea.scrollTop += pixelsToScroll;
+                    scrollAccumulator -= pixelsToScroll;
+                }
 
                 if (displayArea.scrollTop >= displayArea.scrollHeight - displayArea.clientHeight - 10) {
                     pause();
@@ -938,6 +1017,7 @@
                 scrollInterval = null;
             }
             isPlaying = false;
+            scrollAccumulator = 0; // Reset akumulátoru při pauze
             status.textContent = '⏸ Pozastaveno';
             status.className = 'status paused';
         }
@@ -1139,4 +1219,3 @@
     </script>
 </body>
 </html>
-
